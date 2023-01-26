@@ -87,7 +87,7 @@ class Engine():
     def set_cash(self, amount:float):
         self.cash = amount
 
-    def add_ohlc(self, name, data):
+    def add_bardata(self, name, data):
         self.ohlc[name] = data
         self._iterators[name] = data.iterrows()
         if self.indexes is None:
@@ -109,7 +109,9 @@ class Engine():
             self._fill_orders()
             self.cash_series[i] = self.cash 
             self.strategy.next()
-        
+        self._close_all_positions()
+        self.cash_series[i] = self.cash
+
         self._prepare_output()
         return self.output
     
@@ -148,6 +150,21 @@ class Engine():
         
         self.output['statistics'] = statistics
     
+    def _close_all_positions(self):
+        for ticker in self.strategy.tickers:
+            position = self.strategy.position_size(ticker)
+            if  position !=0:
+                t = Trade(
+                    ticker = ticker,
+                    side = 'sell' if position > 0 else 'buy',
+                    price= self.current_prices[ticker]['Close'],
+                    size = -position,
+                    type = 'market',
+                    idx = self.strategy.idx)
+                self.strategy._positions[ticker] += t.size
+                self.strategy._broker.trades.append(t)
+                self.cash -= t.price * t.size
+    
     def _fill_orders(self):
         for order in self.strategy._broker.orders:
             can_fill = False
@@ -159,7 +176,7 @@ class Engine():
                 t = Trade(
                     ticker = order.ticker,
                     side = order.side,
-                    price= self.current_prices[order.ticker]['Open'],  # self.strategy.ohlc[order.ticker].loc[order.idx, 'Open'],
+                    price= self.current_prices[order.ticker]['Open'],
                     size = order.size,
                     type = order.type,
                     idx = self.strategy.idx)
