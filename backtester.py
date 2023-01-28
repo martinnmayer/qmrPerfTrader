@@ -1,6 +1,7 @@
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
+from utils import create_trade_log
 
 class Strategy():
     def __init__(self):
@@ -136,18 +137,21 @@ class Engine():
         df_portfolio['total'] = df_portfolio.sum(axis=1)
         self.output['portfolio'] = df_portfolio
         self.output['positions'] = df_positions
-        self.output['trades'] = df_trades
+        self.output['trades'] = create_trade_log(self.strategy._broker.trades)
 
+        # TODO: RESAMPLE TO DAILY IN CASE WE'RE USING OTHER TIMEFRAMES
         p = df_portfolio.total
         statistics = pd.DataFrame(
-            index=['return_ann', 'volatility_ann', 'sharpe_ratio'])
+            index=['return_total','return_ann', 'volatility_ann', 'sharpe_ratio'])
         statistics.loc['return_ann', 'value'] = (
             (p.iloc[-1] / p.iloc[0]) ** (1 / ((p.index[-1] - p.index[0]).days / 365)) - 1) * 100
+        
+        # TODO: STOCKS IS 252 AND CRYPTO IS 365 (WEEKEND TRADING). WE NEED TO ACCOUNT FOR THAT HERE.
         statistics.loc['volatility_ann',
                        'value'] = p.pct_change().std() * np.sqrt(252) * 100
         statistics.loc['sharpe_ratio', 'value'] = (
             statistics.value.return_ann - self.risk_free_rate) / statistics.value.volatility_ann
-        
+        statistics.loc['return_total', 'value'] = (p.iloc[-1] / p.iloc[0] - 1) * 100
         self.output['statistics'] = statistics
     
     def _close_all_positions(self):
@@ -172,6 +176,7 @@ class Engine():
                     can_fill = True 
             elif order.side == 'sell' and self.strategy._positions[order.ticker] >= order.size:
                     can_fill = True
+
             if can_fill:
                 t = Trade(
                     ticker = order.ticker,
@@ -181,6 +186,7 @@ class Engine():
                     type = order.type,
                     idx = self.strategy.idx)
                 self.strategy._positions[order.ticker] += order.size
+                # print(self.strategy._positions)
                 self.strategy._broker.trades.append(t)
                 self.cash -= t.price * t.size
         self.strategy._broker.orders = []
